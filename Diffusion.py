@@ -4,7 +4,7 @@ import math
 import torch.nn.functional as F
 import cv2
 import os
-os.environ["CUDA_VISIBLE_DEVICES"]="0"
+os.environ["CUDA_VISIBLE_DEVICES"]="0,1"
 import time
 import numpy as np
 from utils import tensor2img
@@ -116,8 +116,8 @@ class GaussianDiffusion:
         )
 
     # Compute predicted mean and variance of p(x_{t-1} | x_t)
-    def p_mean_variance(self, model, sourceImg1,fd, x_t, t, concat_type, clip_denoised=True):
-        input=sourceImg1
+    def p_mean_variance(self, model, valid_stacksImg,fd, x_t, t, clip_denoised=True):
+        input=valid_stacksImg
         pred_noise = model(input,fd,x_t, t)
 
         # Get the predicted x_0: different from the algorithm2 in the paper
@@ -130,10 +130,10 @@ class GaussianDiffusion:
 
     # denoise_step: sample x_{t-1} from x_t and pred_noise
     @torch.no_grad()
-    def p_sample(self, model, sourceImg1,fd, x_t, t, concat_type, add_noise, clip_denoised=True):
+    def p_sample(self, model, valid_stacksImg,fd, x_t, t, add_noise, clip_denoised=True):
         # predict mean and variance
         model_mean, _, model_log_variance = self.p_mean_variance(
-            model, sourceImg1,fd, x_t, t, concat_type, clip_denoised=clip_denoised)
+            model, valid_stacksImg,fd, x_t, t, clip_denoised=clip_denoised)
 
         # Random noise is added except for t=0 steps
         if add_noise:
@@ -148,40 +148,37 @@ class GaussianDiffusion:
 
     # denoise: reverse diffusion
     @torch.no_grad()
-    def p_sample_loop(self, model, sourceImg1,fd, concat_type, add_noise, log_info,split="test"):
+    def p_sample_loop(self, model, valid_stacksImg,fd, add_noise, log_info,split="test"):
         
         step, valid_step_sum, num, generat_imgs_num = log_info
         log_step = 100
-
-        # Start from pure noise (for each example in the batch)
-        # imgs = torch.randn(sourceImg1[0][0][0].unsqueeze(0).shape, device=device).unsqueeze(0)
-        imgs = torch.randn(sourceImg1[:,0:1,0:1,:,:].shape, device=device).squeeze(1)
+        imgs = torch.randn(valid_stacksImg[:,0:1,0:1,:,:].shape, device=device).squeeze(1)
 
         # reverse process
         for i in reversed(range(0, self.timesteps)):
             if split=='test':
                 if i % log_step == 0:
                     now_time = time.strftime('%Y%m%d_%H%M%S')
-                    print(f"[valid step] {int((step - 1) / sourceImg1.shape[0]) + 1}/{valid_step_sum}    "
+                    print(f"[valid step] {int((step - 1) / valid_stacksImg.shape[0]) + 1}/{valid_step_sum}    "
                         f"[generate step] {num + 1}/{generat_imgs_num}    "
                         f"[reverse process] {i}/{self.timesteps}    "
                         f"[time] {now_time}")
-            t = torch.full((sourceImg1.shape[0],), i, device=device, dtype=torch.long)
-            imgs = self.p_sample(model, sourceImg1,fd, imgs, t, concat_type, add_noise)
+            t = torch.full((valid_stacksImg.shape[0],), i, device=device, dtype=torch.long)
+            imgs = self.p_sample(model, valid_stacksImg,fd, imgs, t, add_noise)
         return imgs
 
     # Sample new images
     @torch.no_grad()
-    def sample(self, model, sourceImg1,fd, add_noise, concat_type, model_name, model_path,
+    def sample(self, model, valid_stacksImg,fd, add_noise, model_name,
                generat_imgs_num, step, timestr, valid_step_sum, dataset_name):
         extension_list = ["png"]
         for num in range(generat_imgs_num):
             log_info = [step, valid_step_sum, num, generat_imgs_num]
             ddim_timesteps=0
             if(ddim_timesteps!=0):
-                imgs=self.ddim_sample(model,sourceImg1,fd,sourceImg1.shape[-1],batch_size=sourceImg1.shape[0],channels=1,ddim_timesteps=ddim_timesteps,ddim_discr_method="uniform",ddim_eta=0.0,clip_denoised=True)
+                imgs=self.ddim_sample(model,valid_stacksImg,fd,valid_stacksImg.shape[-1],batch_size=valid_stacksImg.shape[0],channels=1,ddim_timesteps=ddim_timesteps,ddim_discr_method="uniform",ddim_eta=0.0,clip_denoised=True)
             else:
-                imgs = self.p_sample_loop(model, sourceImg1,fd, concat_type, add_noise, log_info)
+                imgs = self.p_sample_loop(model, valid_stacksImg,fd, add_noise, log_info)
             
             print(f'output{step-1}')
             for i in range(imgs.shape[0]):
@@ -289,17 +286,3 @@ class GaussianDiffusion:
 
         return sample_img
 
-    # Compute train losses
-    def train_losses(self, model, stack_img,fd, x_start, t, concat_type, loss_scale):
-
-        noise = torch.randn_like(x_start)
-        # Get x_t
-        x_noisy = self.q_sample(x_start, t, noise=noise)
-        
-
-        predicted_noise = model(stack_img,fd,x_noisy, t)
-
-        
-        assert predicted_noise.shape == noise.shape
-
-        return F.mse_loss(noise, predicted_noise),0,0,0,0

@@ -7,16 +7,9 @@ import torch.nn as nn
 
 # 将tensor转换为img  nyuv2
 def tensor2img(img):
-    # assert len(img) == 3
+    
     reverse_transforms = transforms.Compose([
-        
-        # transforms.Lambda(lambda t: t.permute(1, 2, 0)),  # CHW to HWC
         transforms.Lambda(lambda t: t * 10000.),
-        # transforms.Lambda(lambda t: t.cpu().numpy().astype(np.uint8)),
-
-
-        # #defocus
-        # transforms.Lambda(lambda t: t * 30000.),
         transforms.Lambda(lambda t: t.squeeze().cpu().numpy().astype(np.uint16)),
     ])
     return reverse_transforms(img)
@@ -26,6 +19,7 @@ def weights_init(m):
         torch.nn.init.xavier_normal_(m.weight)
         if m.bias!=None:
             m.bias.data.fill_(0.01)
+
 class InitWeights_He(object):
     def __init__(self, neg_slope=1e-2):
         self.neg_slope = neg_slope
@@ -35,6 +29,7 @@ class InitWeights_He(object):
             module.weight = nn.init.kaiming_normal_(module.weight, a=self.neg_slope)
             if module.bias is not None:
                 module.bias = nn.init.constant_(module.bias, 0)
+
 def tensorboard_writer(timestr):
     log_path = os.path.join('logs', timestr)
     if not os.path.exists(log_path):
@@ -71,8 +66,6 @@ def save_model(model, optimizer, scheduler, epoch, timestr):
         checkpoint['scheduler_state_dict'] = scheduler.state_dict()
     
     torch.save(checkpoint, ckpt_path)
-
-
 
 
 def save_model_tar(epoch,total_iters,best_loss,model,optimizer,scheduler,ckpt_path):
