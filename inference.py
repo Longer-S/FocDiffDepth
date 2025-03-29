@@ -5,7 +5,7 @@ import torch
 from torch.utils.data import DataLoader
 os.environ["CUDA_VISIBLE_DEVICES"]="0,1"
 from Diffusion import GaussianDiffusion
-from Net.net import NoisePred
+from net.net import NoisePred
 import torch.nn as nn
 from dataloader import NYULoader
 device = "cuda:0" if torch.cuda.is_available() else "cpu"
